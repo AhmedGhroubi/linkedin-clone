@@ -1,0 +1,9 @@
+.nav-link { 
+    min-width: 80px; /* Espace large pour cliquer */
+}
+.nav-link:hover {
+    color: #000 !important; /* Devient noir au survol */
+}
+.nav-link.active {
+    border-bottom: 2px solid #000; /* Soulignement page active */
+}

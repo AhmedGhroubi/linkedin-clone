@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Messagerie</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f3f2ef; height: 100vh; display: flex; flex-direction: column; }
+        .chat-container { flex: 1; display: flex; overflow: hidden; max-width: 1200px; margin: 20px auto; width: 100%; background: white; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        
+        /* Colonne Gauche (Liste) */
+        .sidebar { width: 300px; border-right: 1px solid #e0e0e0; overflow-y: auto; }
+        .contact-item { padding: 15px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: 0.2s; }
+        .contact-item:hover { background-color: #f3f2ef; }
+        .contact-item.active { background-color: #eaf4fe; border-left: 4px solid #0a66c2; }
+
+        /* Colonne Droite (Chat) */
+        .chat-area { flex: 1; display: flex; flex-direction: column; background-color: #fff; }
+        .chat-header { padding: 15px; border-bottom: 1px solid #e0e0e0; font-weight: bold; }
+        .messages-box { flex: 1; padding: 20px; overflow-y: auto; background-color: #f9f9f9; display: flex; flex-direction: column; }
+        
+        /* Bulles de messages */
+        .message-bubble { max-width: 70%; padding: 10px 15px; border-radius: 15px; margin-bottom: 10px; font-size: 0.95rem; position: relative; }
+        .message-sent { align-self: flex-end; background-color: #0a66c2; color: white; border-bottom-right-radius: 2px; }
+        .message-received { align-self: flex-start; background-color: #e9e9eb; color: black; border-bottom-left-radius: 2px; }
+        .message-time { font-size: 0.7rem; margin-top: 5px; opacity: 0.8; text-align: right; }
+
+        .chat-input-area { padding: 15px; border-top: 1px solid #e0e0e0; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top px-4">
+    <div class="container">
+        <a class="navbar-brand text-primary fw-bold" href="/">
+            <i class="fab fa-linkedin fa-2x"></i>
+        </a>
+
+        <div class="collapse navbar-collapse justify-content-end">
+            <ul class="navbar-nav text-center gap-4">
+                <li class="nav-item">
+                    <a class="nav-link text-secondary" href="/">
+                        <i class="fas fa-home fa-lg d-block mb-1"></i>
+                        <span class="small">Accueil</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active text-dark fw-bold" href="/network">
+                        <i class="fas fa-user-friends fa-lg d-block mb-1"></i>
+                        <span class="small">Réseau</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-secondary" href="/messaging">
+                        <i class="fas fa-comment-dots fa-lg d-block mb-1"></i>
+                        <span class="small">Messagerie</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="chat-container">
+    
+    <div class="sidebar" id="contacts-list">
+        <p class="text-center mt-4 text-muted">Chargement...</p>
+    </div>
+
+    <div class="chat-area">
+        <div class="chat-header" id="chat-header">
+            Sélectionnez une conversation
+        </div>
+        
+        <div class="messages-box" id="messages-box">
+            </div>
+
+        <div class="chat-input-area">
+            <form id="messageForm" class="d-flex">
+                <input type="text" id="messageInput" class="form-control me-2 rounded-pill" placeholder="Écrivez un message..." disabled autocomplete="off">
+                <button type="submit" class="btn btn-primary rounded-pill" id="sendBtn" disabled>Envoyer</button>
+            </form>
+        </div>
+    </div>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    // Variables globales
+    let currentChatUserId = null;
+    let pollingInterval = null;
+    const CURRENT_USER_ID = 1; // Doit correspondre au serveur
+
+    $(document).ready(function() {
+        // 1. On regarde si on arrive avec un ID spécifique dans l'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const targetUserId = urlParams.get('uid'); 
+
+        // 2. On charge la liste, en lui disant qui ouvrir automatiquement si besoin
+        loadConversations(targetUserId);
+        // Gestion envoi message
+        $('#messageForm').submit(function(e) {
+            e.preventDefault();
+            sendMessage();
+        });
+    });
+
+    // 1. Charger la liste des contacts
+    function loadConversations(autoSelectId = null) {
+        $.ajax({
+            url: '/api/conversations',
+            type: 'GET',
+            success: function(users) {
+                const container = $('#contacts-list');
+                container.empty();
+                
+                users.forEach(user => {
+                    container.append(`
+                        <div class="contact-item d-flex align-items-center" onclick="openChat(${user.id}, '${user.name}')" id="contact-${user.id}">
+                            <img src="${user.avatar}" class="rounded-circle me-3" width="40" height="40">
+                            <div>
+                                <div class="fw-bold">${user.name}</div>
+                                <small class="text-muted">${user.job}</small>
+                            </div>
+                        </div>
+                    `);
+                });
+
+                // Si on a un ID et qu'on le trouve dans la liste, on simule le clic
+                if (autoSelectId) {
+                    // On cherche l'utilisateur correspondant dans les données reçues
+                    const targetUser = users.find(u => u.id == autoSelectId);
+                    
+                    if (targetUser) {
+                        // On lance la fonction d'ouverture exactement comme si on avait cliqué
+                        openChat(targetUser.id, targetUser.name);
+                    }
+                }
+            }
+        });
+    }
+
+    // 2. Ouvrir une conversation
+    function openChat(userId, userName) {
+        currentChatUserId = userId;
+        
+        // Mise à jour UI
+        $('.contact-item').removeClass('active');
+        $(`#contact-${userId}`).addClass('active');
+        $('#chat-header').text(userName);
+        $('#messageInput').prop('disabled', false).focus();
+        $('#sendBtn').prop('disabled', false);
+
+        // Charger les messages immédiatement
+        loadMessages();
+
+        // Démarrer le polling (Rafraîchir toutes les 3 sec)
+        if (pollingInterval) clearInterval(pollingInterval);
+        pollingInterval = setInterval(loadMessages, 3000);
+    }
+
+    // 3. Charger les messages (AJAX)
+    function loadMessages() {
+        if (!currentChatUserId) return;
+
+        $.ajax({
+            url: `/api/messages/${currentChatUserId}`,
+            type: 'GET',
+            success: function(messages) {
+                const box = $('#messages-box');
+                const wasScrolledBottom = isScrolledToBottom(box); // Vérif si on était en bas
+
+                box.empty(); // On vide tout et on remet (méthode bourrin mais simple)
+                
+                if (messages.length === 0) {
+                    box.html('<p class="text-muted text-center mt-5">Aucun message. Dites bonjour ! 👋</p>');
+                }
+
+                messages.forEach(msg => {
+                    const isMe = (msg.senderId === CURRENT_USER_ID);
+                    const bubbleClass = isMe ? 'message-sent' : 'message-received';
+                    const time = new Date(msg.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+                    box.append(`
+                        <div class="message-bubble ${bubbleClass}">
+                            ${msg.text}
+                            <div class="message-time">${time}</div>
+                        </div>
+                    `);
+                });
+
+                // Scroll automatique vers le bas seulement si on était déjà en bas ou au premier chargement
+                // (Pour éviter de gêner l'utilisateur s'il relit d'anciens messages)
+                box.scrollTop(box[0].scrollHeight);
+            }
+        });
+    }
+
+    // 4. Envoyer un message
+    function sendMessage() {
+        const text = $('#messageInput').val();
+        if (text.trim() === "") return;
+
+        $.ajax({
+            url: `/api/messages/${currentChatUserId}`,
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({ text: text }),
+            success: function(res) {
+                if(res.success) {
+                    $('#messageInput').val(''); // Vider le champ
+                    loadMessages(); // Recharger immédiatement pour voir son propre message
+                }
+            }
+        });
+    }
+
+    // Utilitaire pour le scroll
+    function isScrolledToBottom(el) {
+        // Simple approximation
+        return true; 
+    }
+</script>
+</body>
+</html>

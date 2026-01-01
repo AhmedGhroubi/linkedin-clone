@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <title>Mon Réseau</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body { background-color: #f3f2ef; font-family: sans-serif; }
+        .card-person { border-radius: 10px; text-align: center; padding: 20px; position: relative; }
+        .avatar-lg { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 3px solid white; margin-top: -40px; }
+        .cover-bg { height: 60px; background: #a0b4b7; border-radius: 10px 10px 0 0; }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-light bg-white border-bottom sticky-top px-4">
+    <div class="container">
+        <a class="navbar-brand text-primary fw-bold" href="/">
+            <i class="fab fa-linkedin fa-2x"></i>
+        </a>
+
+        <div class="collapse navbar-collapse justify-content-end">
+            <ul class="navbar-nav text-center gap-4">
+                <li class="nav-item">
+                    <a class="nav-link text-secondary" href="/">
+                        <i class="fas fa-home fa-lg d-block mb-1"></i>
+                        <span class="small">Accueil</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active text-dark fw-bold" href="/network">
+                        <i class="fas fa-user-friends fa-lg d-block mb-1"></i>
+                        <span class="small">Réseau</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link text-secondary" href="/messaging">
+                        <i class="fas fa-comment-dots fa-lg d-block mb-1"></i>
+                        <span class="small">Messagerie</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</nav>
+
+<div class="container mt-4">
+    <div class="row">
+        
+        <div class="col-md-4">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white fw-bold">Gérer mon réseau</div>
+                <div class="list-group list-group-flush">
+                    
+                    <button class="list-group-item list-group-item-action d-flex justify-content-between align-items-center" 
+                            data-bs-toggle="modal" data-bs-target="#connectionsModal">
+                        <span><i class="fas fa-users me-2 text-secondary"></i> Relations</span>
+                        <span class="badge bg-light text-dark border" id="connections-count">0</span>
+                    </button>
+                    
+
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white fw-bold d-flex justify-content-between">
+                    <span>Invitations</span>
+                    <a href="#" class="text-decoration-none small text-muted">Tout gérer</a>
+                </div>
+                <div class="card-body p-0" id="invitations-container">
+                    <p class="text-muted text-center py-3">Chargement...</p>
+                </div>
+            </div>
+
+            <h5 class="mb-3">Personnes que vous pourriez connaître</h5>
+            <div class="row" id="suggestions-container">
+                </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="connectionsModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Mes relations</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" id="connections-list-body">
+                </div>
+        </div>
+    </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    $(document).ready(function() {
+        loadNetwork();
+    });
+
+    function loadNetwork() {
+        $.ajax({
+            url: '/api/network',
+            type: 'GET',
+            success: function(data) {
+                renderInvitations(data.invitations);
+                renderSuggestions(data.suggestions);
+                updateConnectionsUI(data.connections);
+            }
+        });
+    }
+
+    // --- RENDU VISUEL ---
+
+    function renderInvitations(list) {
+        const container = $('#invitations-container');
+        container.empty();
+
+        if(list.length === 0) {
+            container.html('<p class="text-muted text-center mb-0">Aucune invitation en attente.</p>');
+            return;
+        }
+
+        list.forEach(user => {
+            const html = `
+                <div class="d-flex justify-content-between align-items-center border-bottom py-2" id="invite-${user.id}">
+                    <div class="d-flex align-items-center">
+                        <img src="${user.avatar}" class="rounded-circle me-3" width="60" height="60">
+                        <div>
+                            <h6 class="mb-0 fw-bold">${user.name}</h6>
+                            <small class="text-muted">${user.job}</small>
+                        </div>
+                    </div>
+                    <div>
+                        <button class="btn btn-outline-secondary btn-sm me-2" onclick="removeConnection(${user.id}, 'invite')">Ignorer</button>
+                        <button class="btn btn-outline-primary btn-sm rounded-pill px-3" onclick="acceptInvite(${user.id})">Accepter</button>
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+    }
+
+    function renderSuggestions(list) {
+        const container = $('#suggestions-container');
+        container.empty();
+
+        list.forEach(user => {
+            const html = `
+                <div class="col-md-3 mb-3">
+                    <div class="card shadow-sm card-person h-100 p-0 border-0">
+                        <div class="cover-bg"></div>
+                        <img src="${user.avatar}" class="avatar-lg mx-auto bg-white">
+                        <div class="card-body pt-2">
+                            <h6 class="fw-bold text-truncate">${user.name}</h6>
+                            <p class="text-muted small mb-3 text-truncate">${user.job}</p>
+                            
+                            <button id="btn-connect-${user.id}" 
+                                    class="btn btn-outline-primary btn-sm rounded-pill w-100 stretched-link" 
+                                    onclick="sendInvite(event, ${user.id})">
+                                Se connecter
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.append(html);
+        });
+    }
+
+    function updateConnectionsUI(list) {
+        // A. Mettre à jour le compteur dans la barre latérale
+        $('#connections-count').text(list.length);
+
+        // B. Remplir le Modal avec la liste des amis
+        const modalBody = $('#connections-list-body');
+        modalBody.empty();
+
+        if (list.length === 0) {
+            modalBody.html('<p class="text-center text-muted py-4">Vous n\'avez pas encore de relations.</p>');
+            return;
+        }
+
+        list.forEach(user => {
+            const html = `
+                <div class="d-flex align-items-center justify-content-between p-3 border-bottom">
+                    <div class="d-flex align-items-center">
+                        <img src="${user.avatar}" class="rounded-circle me-3" width="50" height="50">
+                        <div>
+                            <h6 class="mb-0 fw-bold">${user.name}</h6>
+                            <small class="text-muted">${user.job}</small>
+                        </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-primary btn-sm rounded-pill" onclick="window.location.href='/messaging?uid=${user.id}'">Message</button>
+                        <button class="btn btn-outline-secondary btn-sm rounded-pill" onclick="removeConnection(${user.id}, 'accepted')"><i class="fas fa-trash"></i></button>
+                    </div>
+                </div>
+            `;
+            modalBody.append(html);
+        });
+    }
+
+    // --- ACTIONS AJAX ---
+
+    // 1. Accepter une invitation
+    function acceptInvite(userId) {
+        $.ajax({
+            url: `/api/network/accept/${userId}`,
+            type: 'POST',
+            success: function(res) {
+                if(res.success) {
+                    $(`#invite-${userId}`).fadeOut(300, function() { $(this).remove(); });
+                    // Optionnel : Recharger le réseau pour mettre à jour les compteurs
+                }
+            }
+        });
+    }
+
+    // 2. Envoyer une invitation (Se connecter)
+    function sendInvite(e, userId) {
+        // e.stopPropagation() empêche le clic de traverser la "card" si besoin
+        if(e) e.stopPropagation(); 
+        
+        let btn = $(`#btn-connect-${userId}`);
+
+        $.ajax({
+            url: `/api/network/connect/${userId}`,
+            type: 'POST',
+            success: function(res) {
+                if(res.success) {
+                    // TRANSFORMER LE BOUTON EN "ANNULER"
+                    btn.removeClass('btn-outline-primary')
+                       .addClass('btn-outline-danger') // Devient rouge
+                       .text('Annuler la demande')
+                       .attr('onclick', `removeConnection(${userId}, 'suggestion')`); // Change l'action du clic
+                    
+                    // Note : On retire "stretched-link" pour éviter des clics accidentels sur toute la carte
+                    btn.removeClass('stretched-link'); 
+                    btn.css('position', 'relative'); // Fix CSS pour le clic
+                }
+            }
+        });
+    }
+
+    // 3. Supprimer une connexion (Sert pour Ignorer ET Annuler)
+    function removeConnection(userId, context) {
+        // context sert à savoir si on vient de la liste d'invitations ou des suggestions
+        $.ajax({
+            url: `/api/network/${userId}`,
+            type: 'DELETE',
+            success: function(res) {
+                if(res.success) {
+                    if (context === 'invite') {
+                        // Cas "Ignorer" : On supprime la ligne
+                        $(`#invite-${userId}`).fadeOut(300, function() { $(this).remove(); });
+                    } else if (context === 'suggestion') {
+                        // Cas "Annuler" : On remet le bouton comme avant
+                        let btn = $(`#btn-connect-${userId}`);
+                        btn.removeClass('btn-outline-danger')
+                           .addClass('btn-outline-primary')
+                           .text('Se connecter')
+                           .attr('onclick', `sendInvite(event, ${userId})`);
+                    }else if (context === 'accepted') {
+                        loadNetwork(); 
+                        // $('#connectionsModal').modal('hide'); 
+                    }
+                }
+            },
+            error: function(err) {
+                alert("Erreur lors de l'action");
+            }
+        });
+    }
+</script>
+</body>
+</html>
