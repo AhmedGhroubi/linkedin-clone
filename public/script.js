@@ -2,41 +2,53 @@ const CURRENT_USER_ID = 1;
 
 $(document).ready(function() {
     
-    // 1. Charger les posts au démarrage
+    // 1. Charger les posts et suggestions
     loadFeed();
     loadSidebarSuggestions();
     
-
-    // 2. Gestion du bouton Publier dans le Modal
+    // 2. Bouton Publier du modal
     $('#submitPostBtn').click(function() {
         $('#postForm').submit();
     });
 
-    // 3. Soumission du formulaire (Création)
+    // 3. Soumission du formulaire (Création de post AVEC FICHIER)
     $('#postForm').on('submit', function(e) {
         e.preventDefault();
+        
+        // --- CHANGEMENT MAJEUR ICI ---
+        // On crée un objet FormData qui contient automatiquement
+        // tous les champs du formulaire (texte ET fichier binaire)
         var formData = new FormData(this);
-        formData.append('author', 'Ahmed Développeur'); // Simulé
 
         $.ajax({
-            url: '/api/posts',
+            url: '/api/post',
             type: 'POST',
+            // On envoie le FormData directement
             data: formData,
-            processData: false,
-            contentType: false,
+            
+            // --- LIGNES CRUCIALES POUR L'UPLOAD DE FICHIER ---
+            // Dit à jQuery de ne pas transformer les données en chaîne de caractères
+            processData: false, 
+            // Dit à jQuery de ne pas définir de Content-Type (le navigateur le fera tout seul pour le multipart)
+            contentType: false, 
+            
             success: function(response) {
                 if(response.success) {
-                    // Fermer le modal
                     $('#postModal').modal('hide');
                     $('#postForm')[0].reset();
                     
-                    // Ajouter le nouveau post en haut de la liste
+                    response.post.authorName = "Ahmed Développeur"; 
                     renderPost(response.post, true); 
                 }
+            },
+            error: function(err) {
+                console.log(err);
+                // Affiche le message d'erreur s'il y en a un (ex: "Seules les images sont autorisées")
+                let msg = err.responseJSON && err.responseJSON.message ? err.responseJSON.message : "Erreur lors de la publication";
+                alert(msg);
             }
         });
     });
-
 });
 
 // --- FONCTIONS ---
@@ -46,71 +58,45 @@ function loadFeed() {
         url: '/api/posts',
         type: 'GET',
         success: function(posts) {
-            $('#loadingSpinner').hide(); // Cacher le chargement
-            $('#feedContainer').empty(); // Vider le conteneur par sécurité
-            
-            // Boucle sur chaque post reçu
+            $('#loadingSpinner').hide(); 
+            $('#feedContainer').empty();
             posts.forEach(function(post) {
-                renderPost(post, false); // false = ajouter à la fin (append)
+                renderPost(post, false); 
             });
         },
         error: function() {
-            alert("Erreur lors du chargement du fil d'actualité.");
+            $('#loadingSpinner').hide();
+            $('#feedContainer').html('<p class="text-center text-danger">Erreur de chargement.</p>');
         }
     });
 }
 
-// Fonction utilitaire pour générer le HTML d'un post
 function renderPost(post, isNew) {
-    // Formater la date
-    let dateStr = new Date(post.date).toLocaleDateString() + ' à ' + new Date(post.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    // 1. Gestion propre du TEXTE pour éviter "undefined"
+    let rawContent = post.content || post.text;
+    // Si vide ou undefined, on met une chaîne vide
+    let contentDisplay = rawContent ? rawContent : "";
 
-    let html = `
-    <div class="card shadow-sm" id="post-${post.id}">
-        <div class="card-body">
-            <div class="d-flex mb-3">
-                <img src="https://via.placeholder.com/40" class="rounded-circle me-2" width="40" height="40">
-                <div>
-                    <h6 class="fw-bold mb-0">${post.author}</h6>
-                    <small class="text-muted">${dateStr}</small>
-                </div>
-            </div>
-            
-            <p class="card-text">${post.text}</p>
-            
-            ${post.media ? `<img src="${post.media}" class="img-fluid rounded mb-3 w-100" style="max-height: 400px; object-fit: cover;">` : ''}
-            
-            <div class="d-flex justify-content-between border-top pt-2">
-                <button class="btn btn-reaction w-100" onclick="likePost(${post.id})">
-                    <i class="far fa-thumbs-up"></i> J'aime <span id="likes-count-${post.id}">(${post.likes})</span>
-                </button>
-                <button class="btn btn-reaction w-100">
-                    <i class="far fa-comment-dots"></i> Commenter
-                </button>
-                <button class="btn btn-reaction w-100">
-                    <i class="fas fa-share"></i> Partager
-                </button>
-            </div>
-        </div>
-    </div>
-    `;
-
-    if (isNew) {
-        $('#feedContainer').prepend(html).hide().fadeIn(); // Animation
-    } else {
-        $('#feedContainer').append(html);
+    // 2. Gestion de la DATE
+    let dateStr = "À l'instant";
+    if(post.date) {
+        dateStr = new Date(post.date).toLocaleDateString() + ' ' + new Date(post.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     }
-}
 
-function renderPost(post, isNew) {
-    let dateStr = new Date(post.date).toLocaleDateString();
-    let likesCount = post.likedBy ? post.likedBy.length : 0;
-    let isLikedByMe = post.likedBy && post.likedBy.includes(CURRENT_USER_ID);
+    // 3. Gestion de l'IMAGE (supporte post.image ou post.media)
+    let imageSrc = post.image || post.media;
+    let imageHtml = imageSrc ? `<img src="${imageSrc}" class="img-fluid rounded mb-3 w-100">` : '';
+
+    // 4. Auteur
+    let authorName = post.authorName || post.author || "Utilisateur";
+    let authorAvatar = post.authorAvatar || "https://via.placeholder.com/40";
     
-    let likeBtnClass = isLikedByMe ? "text-primary fw-bold" : "text-muted";
-    let iconClass = isLikedByMe ? "fas fa-thumbs-up" : "far fa-thumbs-up";
+    // 5. Likes
+    let likesCount = post.likes || 0; 
+    let iconClass = "far fa-thumbs-up"; 
+    let likeBtnClass = "text-muted";
 
-    // Préparer le HTML des commentaires existants
+    // 6. Commentaires HTML
     let commentsHtml = '';
     if (post.comments && post.comments.length > 0) {
         post.comments.forEach(comment => {
@@ -122,15 +108,16 @@ function renderPost(post, isNew) {
     <div class="card shadow-sm mb-3" id="post-${post.id}">
         <div class="card-body">
             <div class="d-flex mb-3">
-                <img src="https://via.placeholder.com/40" class="rounded-circle me-2" width="40" height="40">
+                <img src="${authorAvatar}" class="rounded-circle me-2" width="40" height="40">
                 <div>
-                    <h6 class="fw-bold mb-0">${post.author}</h6>
+                    <h6 class="fw-bold mb-0">${authorName}</h6>
                     <small class="text-muted">${dateStr}</small>
                 </div>
             </div>
             
-            <p class="card-text">${post.text}</p>
-            ${post.media ? `<img src="${post.media}" class="img-fluid rounded mb-3 w-100">` : ''}
+            <p class="card-text">${contentDisplay}</p>
+            
+            ${imageHtml}
             
             <div class="d-flex justify-content-between border-top pt-2">
                 <button class="btn btn-reaction w-100 ${likeBtnClass}" id="like-btn-${post.id}" onclick="toggleLike(${post.id})">
@@ -142,11 +129,9 @@ function renderPost(post, isNew) {
             </div>
 
             <div id="comments-section-${post.id}" class="mt-3" style="display: none; background-color: #f9f9f9; padding: 10px; border-radius: 8px;">
-                
                 <div id="comments-list-${post.id}" class="mb-2">
                     ${commentsHtml}
                 </div>
-
                 <div class="d-flex align-items-center">
                     <img src="https://via.placeholder.com/30" class="rounded-circle me-2" width="30">
                     <input type="text" id="comment-input-${post.id}" class="form-control rounded-pill" placeholder="Ajouter un commentaire...">
@@ -164,46 +149,38 @@ function renderPost(post, isNew) {
     }
 }
 
-// Fonction AJAX pour le Like
+// ... (Le reste des fonctions toggleLike, submitComment, etc. reste inchangé) ...
 function toggleLike(id) {
     $.ajax({
-        url: '/api/posts/' + id + '/like',
+        url: '/api/post/like/' + id,
         type: 'POST',
         success: function(response) {
             if(response.success) {
-                // 1. Mettre à jour le compteur
-                $(`#likes-count-${id}`).text(`(${response.likesCount})`);
-
-                // 2. Changer la couleur du bouton et l'icône
+                $(`#likes-count-${id}`).text(`(${response.likes})`);
                 let btn = $(`#like-btn-${id}`);
                 let icon = $(`#like-icon-${id}`);
-
-                if (response.action === 'liked') {
-                    btn.removeClass('text-muted').addClass('text-primary fw-bold');
-                    icon.removeClass('far').addClass('fas'); // Icône pleine
+                if(btn.hasClass('text-muted')) {
+                      btn.removeClass('text-muted').addClass('text-primary fw-bold');
+                      icon.removeClass('far').addClass('fas');
                 } else {
-                    btn.removeClass('text-primary fw-bold').addClass('text-muted');
-                    icon.removeClass('fas').addClass('far'); // Icône vide
+                      btn.removeClass('text-primary fw-bold').addClass('text-muted');
+                      icon.removeClass('fas').addClass('far');
                 }
             }
         },
-        error: function(err) {
-            console.error("Erreur like", err);
-        }
+        error: function(err) { console.error("Erreur like", err); }
     });
 }
 
-// 1. Afficher / Masquer la zone de commentaires
 function toggleCommentsSection(postId) {
-    $(`#comments-section-${postId}`).slideToggle(); // Animation jQuery fluide
-    $(`#comment-input-${postId}`).focus(); // Met le curseur dans le champ
+    $(`#comments-section-${postId}`).slideToggle();
+    $(`#comment-input-${postId}`).focus();
 }
 
-// 2. Générer le HTML d'un seul commentaire (pour éviter la répétition)
 function generateCommentHtml(comment) {
     return `
         <div class="d-flex mb-2">
-            <img src="https://via.placeholder.com/30" class="rounded-circle me-2 mt-1" width="30" height="30">
+            <img src="${comment.avatar || 'https://via.placeholder.com/30'}" class="rounded-circle me-2 mt-1" width="30" height="30">
             <div class="bg-white p-2 rounded w-100 shadow-sm">
                 <h6 class="fw-bold mb-0 small">${comment.author}</h6>
                 <p class="mb-0 small text-dark">${comment.text}</p>
@@ -212,34 +189,24 @@ function generateCommentHtml(comment) {
     `;
 }
 
-// 3. Envoyer le commentaire via AJAX
 function submitComment(postId) {
     let inputField = $(`#comment-input-${postId}`);
     let text = inputField.val();
-
-    if (text.trim() === "") return; // Ne rien faire si vide
+    if (text.trim() === "") return;
 
     $.ajax({
-        url: `/api/posts/${postId}/comment`,
+        url: `/api/post/comment/${postId}`,
         type: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify({ text: text }), // Envoi en JSON
+        data: JSON.stringify({ text: text }),
         success: function(response) {
             if(response.success) {
-                // Créer le HTML du nouveau commentaire
                 let newCommentHtml = generateCommentHtml(response.comment);
-                
-                // L'ajouter à la liste avec une petite animation
                 $(`#comments-list-${postId}`).append(newCommentHtml);
-                
-                // Vider le champ de saisie
                 inputField.val('');
             }
         },
-        error: function(err) {
-            console.error(err);
-            alert("Erreur lors de l'envoi du commentaire");
-        }
+        error: function(err) { console.error(err); alert("Erreur commentaire"); }
     });
 }
 
@@ -250,15 +217,11 @@ function loadSidebarSuggestions() {
         success: function(data) {
             const container = $('#sidebar-suggestions');
             container.empty();
-
-            // On prend seulement les 3 premiers (slice)
-            const suggestions = data.suggestions.slice(0, 3);
-
+            const suggestions = data.suggestions ? data.suggestions.slice(0, 3) : [];
             if (suggestions.length === 0) {
                 container.html('<p class="text-muted small text-center p-3">Aucune suggestion.</p>');
                 return;
             }
-
             suggestions.forEach(user => {
                 const html = `
                 <div class="d-flex align-items-start p-3 border-bottom position-relative">
@@ -266,29 +229,24 @@ function loadSidebarSuggestions() {
                     <div class="overflow-hidden">
                         <h6 class="fw-bold mb-0 small text-truncate">${user.name}</h6>
                         <p class="text-muted small mb-2 text-truncate" style="font-size: 11px;">${user.job}</p>
-                        
                         <button class="btn btn-outline-secondary btn-sm rounded-pill py-0 px-2" 
-                                style="font-size: 12px;"
-                                onclick="quickConnect(this, ${user.id})">
+                                style="font-size: 12px;" onclick="quickConnect(this, ${user.id})">
                             <i class="fas fa-plus"></i> Suivre
                         </button>
                     </div>
-                </div>
-                `;
+                </div>`;
                 container.append(html);
             });
         }
     });
 }
 
-// Fonction pour connecter depuis la sidebar (Similaire à celle du réseau)
 function quickConnect(btn, userId) {
     $.ajax({
         url: `/api/network/connect/${userId}`,
         type: 'POST',
         success: function(res) {
             if(res.success) {
-                // Change le bouton en "Check" vert
                 $(btn).removeClass('btn-outline-secondary')
                       .addClass('btn-success text-white border-0')
                       .html('<i class="fas fa-check"></i>')
